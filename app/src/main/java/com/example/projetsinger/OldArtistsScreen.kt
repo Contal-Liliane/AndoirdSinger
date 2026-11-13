@@ -1,109 +1,113 @@
 package com.example.projetsinger
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OldArtistsScreen(
-    navController: NavController
+    onBack: () -> Unit,
+    onArtistClick: (String) -> Unit
 ) {
 
-    val viewModel = viewModel<SpotifyViewModel>()
+    val viewModel: SpotifyViewModel = viewModel()
 
-    val results by viewModel.results.collectAsState()
-
+    val artistes by viewModel.artistes.collectAsState()
     val erreur by viewModel.erreur.collectAsState()
-
     val chargement by viewModel.chargement.collectAsState()
 
+    val paysage =
+        LocalConfiguration.current.orientation ==
+                Configuration.ORIENTATION_LANDSCAPE
+
     LaunchedEffect(Unit) {
-        viewModel.search("year:2005")
+        viewModel.loadOldArtists()
     }
 
     Scaffold(
-
         topBar = {
-
             TopAppBar(
-
                 title = {
                     Text("⭐ Artistes du passé")
                 },
-
                 navigationIcon = {
-
-                    TextButton(
-                        onClick = {
-                            navController.popBackStack()
-                        }
-                    ) {
-                        Text("⬅")
+                    TextButton(onClick = onBack) {
+                        Text("⬅ Retour")
                     }
                 }
             )
         }
-
     ) { paddingValues ->
 
-        when {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
 
-            chargement -> {
+            when {
 
-                LoadingScreen()
-            }
+                chargement -> LoadingScreen()
 
-            erreur -> {
+                erreur -> ErrorScreen()
 
-                ErrorScreen()
-            }
+                artistes.isEmpty() -> EmptyScreen()
 
-            else -> {
+                else -> {
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                ) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(
+                            if (paysage) 2 else 1
+                        ),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
 
-                    val artistes = results
-                        .mapNotNull {
-                            it.artists.firstOrNull()?.name
-                        }
-                        .distinct()
-                        .shuffled()
-                        .take(10)
+                        items(artistes) { artiste ->
 
-                    items(artistes) { artiste ->
+                            Card(
+                                onClick = {
+                                    artiste.id?.let {
+                                        onArtistClick(it)
+                                    }
+                                },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFFFFF3E0)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = 16.dp,
+                                        vertical = 8.dp
+                                    )
+                            ) {
 
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFFFFF3E0)
-                            ),
-
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = 16.dp,
-                                    vertical = 8.dp
+                                Text(
+                                    text = "⭐ ${artiste.name}",
+                                    modifier = Modifier.padding(16.dp)
                                 )
-                        ) {
-
-                            Text(
-                                text = "⭐ $artiste",
-                                modifier = Modifier.padding(16.dp)
-                            )
+                            }
                         }
                     }
                 }

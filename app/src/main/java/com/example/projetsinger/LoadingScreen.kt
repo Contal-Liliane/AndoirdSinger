@@ -14,32 +14,35 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun LoadingScreen() {
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
-
-        verticalArrangement =
-            Arrangement.Center,
-
-        horizontalAlignment =
-            Alignment.CenterHorizontally
+        contentAlignment = Alignment.Center
     ) {
 
-        Image(
-            painter = painterResource(
-                id = R.drawable.licorne
-            ),
-            contentDescription = "Chargement",
-            modifier = Modifier.size(250.dp),
-            contentScale = ContentScale.Fit
-        )
+        // La licorne rétrécit si la hauteur disponible est faible (paysage)
+        val taille = minOf(250.dp, maxHeight * 0.55f)
 
-        Spacer(
-            modifier = Modifier.height(20.dp)
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
 
-        Text(
-            text = "Je charge !",
-            style = MaterialTheme.typography.headlineSmall
-        )
+            Image(
+                painter = painterResource(
+                    id = R.drawable.licorne
+                ),
+                contentDescription = "Chargement",
+                modifier = Modifier.size(taille),
+                contentScale = ContentScale.Fit
+            )
+
+            Spacer(
+                modifier = Modifier.height(12.dp)
+            )
+
+            Text(
+                text = "Je charge !",
+                style = MaterialTheme.typography.headlineSmall
+            )
+        }
     }
 }

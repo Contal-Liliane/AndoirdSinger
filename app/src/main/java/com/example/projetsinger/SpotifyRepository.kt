@@ -1,110 +1,203 @@
+
 package com.example.projetsinger
 
 import android.util.Base64
 import android.util.Log
+import com.google.gson.Gson
+import io.ktor.client.call.body
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.parameter
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
+import io.ktor.http.isSuccess
+import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.io.IOException
 
 class SpotifyRepository {
 
-    private val clientId = "6884d577223945fd89e6eb4819f4e2b6"
+    private val client = SpotifyHttpClient.client
 
-    private val clientSecret = "c4410ed800ac48478919239511f08e0d"
+    private val clientId = BuildConfig.SPOTIFY_CLIENT_ID
+    private val clientSecret = BuildConfig.SPOTIFY_CLIENT_SECRET
 
-    suspend fun getAccessToken(): String? {
+    private var cachedToken: String? = null
+    private var tokenExpiration = 0L
 
-        Log.d("SPOTIFY", "Demande token")
+    private val mutex = Mutex()
 
-        val credentials =
-            "$clientId:$clientSecret"
+    private suspend fun getAccessToken(
+        forcer: Boolean = false
+    ): String = mutex.withLock {
 
-        val encoded =
-            Base64.encodeToString(
-                credentials.toByteArray(),
-                Base64.NO_WRAP
-            )
+        val existing = cachedToken
 
-        val response =
-            SpotifyAuthRetrofit.api.getToken(
-                authorization = "Basic $encoded",
-                grantType = "client_credentials"
-            )
-
-        Log.d(
-            "SPOTIFY",
-            "Code token : ${response.code()}"
-        )
-
-        if (response.isSuccessful) {
-
-            val token =
-                response.body()?.access_token
-
-            Log.d(
-                "SPOTIFY",
-                "Token obtenu : $token"
-            )
-
-            return token
+        if (!forcer &&
+            existing != null &&
+            System.currentTimeMillis() < tokenExpiration
+        ) {
+            return@withLock existing
         }
 
-        return null
+        Log.d("SPOTIFY", "Demande d'un nouveau token")
+
+        val encoded = Base64.encodeToString(
+            "$clientId:$clientSecret".toByteArray(),
+            Base64.NO_WRAP
+        )
+
+        val response = client.submitForm(
+            url = "${SpotifyHttpClient.AUTH_URL}api/token",
+            formParameters = Parameters.build {
+                append("grant_type", "client_credentials")
+            }
+        ) {
+            header("Authorization", "Basic $encoded")
+        }
+
+        if (!response.status.isSuccess()) {
+            throw IOException(
+                "Token refusé (code ${response.status.value}) : " +
+                        response.bodyAsText()
+            )
+        }
+
+        val body: TokenResponse = response.body()
+
+        cachedToken = body.access_token
+
+        tokenExpiration = System.currentTimeMillis() +
+                (body.expires_in - 60).coerceAtLeast(0) * 1000L
+
+        body.access_token
+    }
+
+    suspend fun verifierConnexion() {
+        getAccessToken(forcer = true)
+    }
+
+    private suspend inline fun <reified T : Any> apiGet(
+        path: String,
+        token: String,
+        crossinline parameters: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}
+    ): T {
+
+        val response = client.get(
+            "${SpotifyHttpClient.API_URL}$path"
+        ) {
+            header("Authorization", "Bearer $token")
+            parameters()
+        }
+
+        Log.d("SPOTIFY", "Code $path : ${response.status.value}")
+
+        if (!response.status.isSuccess()) {
+            throw IOException(
+                "Requête $path échouée " +
+                        "(code ${response.status.value}) : " +
+                        response.bodyAsText()
+            )
+        }
+
+        return response.body()
     }
 
     suspend fun searchTrack(
-        query: String
+        query: String,
+        offset: Int = 0
     ): List<Track> {
 
-        Log.d(
-            "SPOTIFY",
-            "Recherche : $query"
+        Log.d("SPOTIFY", "Recherche : $query (offset $offset)")
+
+        val token = getAccessToken()
+
+        val body: SearchResponse = apiGet(
+            path = "v1/search",
+            token = token
+        ) {
+            parameter("q", query)
+            parameter("type", "track")
+            parameter("limit", 10)
+            parameter("offset", offset)
+        }
+
+        return body.tracks?.items ?: emptyList()
+    }
+
+    suspend fun searchAll(
+        query: String
+    ): Pair<List<Track>, List<Artist>> {
+
+        Log.d("SPOTIFY", "Recherche globale : $query")
+
+        val token = getAccessToken()
+
+        val body: SearchResponse = apiGet(
+            path = "v1/search",
+            token = token
+        ) {
+            parameter("q", query)
+            parameter("type", "track,artist")
+            parameter("limit", 5)
+        }
+
+        return Pair(
+            body.tracks?.items ?: emptyList(),
+            body.artists?.items ?: emptyList()
         )
+    }
 
-        val token =
-            getAccessToken()
+    suspend fun getNewReleases(): List<Album> {
 
-        if (token == null) {
+        val token = getAccessToken()
 
-            Log.d(
-                "SPOTIFY",
-                "Token null"
-            )
-
-            return emptyList()
+        val body: SearchResponse = apiGet(
+            path = "v1/search",
+            token = token
+        ) {
+            parameter("q", "tag:new")
+            parameter("type", "album")
+            parameter("limit", 10)
         }
 
-        try {
+        return body.albums?.items ?: emptyList()
+    }
 
-            val response =
-                RetrofitInstance.api.searchTrack(
-                    token = "Bearer $token",
-                    query = query
-                )
+    suspend fun getTrack(id: String): Track {
 
-            Log.d(
-                "SPOTIFY",
-                "Code recherche : ${response.code()}"
-            )
+        val token = getAccessToken()
 
-            Log.d(
-                "SPOTIFY",
-                "Body : ${response.body()}"
-            )
+        return apiGet(
+            path = "v1/tracks/$id",
+            token = token
+        )
+    }
 
-            if (response.isSuccessful) {
+    suspend fun getArtist(id: String): Artist {
 
-                return response.body()
-                    ?.tracks
-                    ?.items
-                    ?: emptyList()
-            }
+        val token = getAccessToken()
 
-        } catch (e: Exception) {
+        return apiGet(
+            path = "v1/artists/$id",
+            token = token
+        )
+    }
 
-            Log.d(
-                "SPOTIFY",
-                "Erreur recherche : ${e.message}"
-            )
+    suspend fun getArtistAlbums(id: String): List<Album> {
+
+        val token = getAccessToken()
+
+        val body: AlbumsResponse = apiGet(
+            path = "v1/artists/$id/albums",
+            token = token
+        ) {
+            parameter("include_groups", "album,single")
+            parameter("limit", 10)
         }
 
-        return emptyList()
+        return body.items
     }
 }
