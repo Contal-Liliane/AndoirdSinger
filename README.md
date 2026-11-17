@@ -98,8 +98,3 @@ Interface utilisateur (Jetpack Compose)
 
 Ce projet a été réalisé dans le cadre d'un apprentissage du développement Android moderne. Il met en œuvre la création d'interfaces avec Jetpack Compose, la consommation d'une API REST et la gestion de la navigation et des états d'une application mobile.
 
----
-
-## Auteur
-
-**Liliane CONTAL**
